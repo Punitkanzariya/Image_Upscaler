@@ -5,3 +5,9 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile
     autoDeploy: true
+    buildCommand: ""  # Optional - Docker handles the build
+    startCommand: ""  # Optional - Docker handles the start
+    healthCheckPath: /health  # Optional - uses your health endpoint
+    envVars:
+      - key: PORT
+        value: 10000

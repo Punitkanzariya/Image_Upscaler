@@ -24,6 +24,10 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 # Load default model once at startup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# Optimize for CPU deployment
+if not torch.cuda.is_available():
+    torch.set_num_threads(1)  # Limit CPU threads for memory efficiency
+
 # Function to get the right model architecture based on model name
 def get_model_architecture(model_name, scale):
     """Get the appropriate model architecture based on model name"""
@@ -98,10 +102,12 @@ def index():
         input_path = os.path.join(UPLOAD_FOLDER, filename)
         image_file.save(input_path)
 
-        # Load image
+        # Load image with size limits for memory safety
         try:
             img = Image.open(input_path).convert('RGB')
-            img.thumbnail((512, 512))  # Resize to reduce RAM usage
+            # More aggressive size limiting for Render
+            max_size = 400 if not torch.cuda.is_available() else 800
+            img.thumbnail((max_size, max_size))
             img_np = np.array(img)
         except Exception as e:
             return render_template("index.html", error=f"Invalid image file: {str(e)}")
@@ -112,16 +118,23 @@ def index():
             return render_template("index.html", error=error)
 
         try:
-            # Enhance image
-            output_np, _ = upsampler.enhance(img_np)
+            # Enhance image with memory monitoring
+            output_np, _ = upsampler.enhance(img_np, outscale=scale)
             output_img = Image.fromarray(output_np)
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                return render_template("index.html", error="Image too large for processing. Please upload a smaller image.")
+            else:
+                return render_template("index.html", error=f"Enhancement failed: {str(e)}")
         except Exception as e:
             return render_template("index.html", error=f"Enhancement failed: {str(e)}")
         finally:
             # Clean up upsampler
             if 'upsampler' in locals():
                 del upsampler
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
 
         # Save output image
         output_path = os.path.join(RESULT_FOLDER, f"result_{filename}")
@@ -130,17 +143,37 @@ def index():
         # Free memory
         del img, img_np, output_np, output_img
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return render_template("result.html",
                                input_url=f"/{UPLOAD_FOLDER}/{filename}",
                                output_url=f"/{output_path}")
     return render_template("index.html")
 
+# Route to list available models
+@app.route('/models')
+def list_models():
+    """List available model files"""
+    if not os.path.exists(WEIGHTS_FOLDER):
+        return {'models': [], 'error': 'Weights folder not found'}
+    
+    models = []
+    for file in os.listdir(WEIGHTS_FOLDER):
+        if file.endswith('.pth'):
+            models.append(file.replace('.pth', ''))
+    
+    return {'models': models}
+
 # Health check route
 @app.route('/health')
 def health_check():
-    return {'status': 'healthy', 'device': str(device)}
+    return {
+        'status': 'healthy', 
+        'device': str(device),
+        'cuda_available': torch.cuda.is_available(),
+        'weights_folder_exists': os.path.exists(WEIGHTS_FOLDER)
+    }
 
 # Run app
 if __name__ == '__main__':
