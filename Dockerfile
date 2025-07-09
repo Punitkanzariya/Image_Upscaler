@@ -2,7 +2,6 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# ✅ Install required system packages including libgthread
 RUN apt-get update && apt-get install -y \
     build-essential \
     libgl1 \
@@ -11,13 +10,8 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt .
 
-# ✅ Install PyTorch + torchvision
 RUN pip install --no-cache-dir torch torchvision
-
-# ✅ Install all other packages
 RUN pip install --no-cache-dir -r requirements.txt
-
-# ✅ Downgrade numpy for PyTorch compatibility
 RUN pip install --no-cache-dir numpy==1.26.4
 
 COPY . .
