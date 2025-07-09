@@ -25,23 +25,11 @@
       </div>
 
       <div class="form-section">
-        <label>Model:</label>
+        <label>Select Model:</label>
         <select name="model">
-          <option value="RealESRGAN_x4plus">Enhance</option>
-          <option value="RealESRGAN_x4plus_anime_6B">Anime</option>
+          <option value="RealESRGAN_x4plus">Photo Enhance</option>
+          <option value="RealESRGAN_x4plus_anime_6B">Anime Enhance</option>
         </select>
-
-        <label>Scale:</label>
-        <select name="scale">
-          <option value="2">2x</option>
-          <option value="4" selected>4x</option>
-        </select>
-
-        <label>Tile Size:</label>
-        <input type="number" name="tile_size" value="256">
-
-        <label>Tile Padding:</label>
-        <input type="number" name="tile_pad" value="10">
       </div>
 
       <div id="progress-container" style="display:none;">
@@ -60,7 +48,6 @@
     <a href="https://gitlab.com/Punitkanzariya" target="_blank">Visit my GitLab</a>
   </footer>
 
-
   <script>
     const form = document.querySelector("form");
     const button = document.querySelector(".submit-btn");
@@ -69,14 +56,10 @@
     const progressText = document.getElementById("progress-text");
 
     form.addEventListener("submit", function () {
-      // Show progress bar
       progressContainer.style.display = "block";
-
-      // Disable button and update text 
       button.disabled = true;
       button.innerText = "🔄 Enhancing... Please wait";
 
-      // Simulated progress
       let progress = 0;
       const interval = setInterval(() => {
         if (progress >= 99) {
