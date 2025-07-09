@@ -1,7 +1,7 @@
-# Use lightweight Python base
+# Use official lightweight Python image
 FROM python:3.10-slim
 
-# Set work directory
+# Set working directory
 WORKDIR /app
 
 # Install system dependencies
@@ -10,17 +10,23 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy Python requirements
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
 
-# Copy app code
+# ✅ Install torch first to avoid numpy runtime error
+RUN pip install --no-cache-dir torch torchvision
+
+# ✅ Install other dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ✅ Reinstall numpy (important fix for PyTorch)
+RUN pip install --no-cache-dir --force-reinstall numpy
+
+# Copy the rest of the app
 COPY . .
 
-# Port Flask will run on
+# Set the port environment variable (Render uses PORT)
 ENV PORT 10000
 
-# Run the Flask app via Gunicorn
+# Start the Flask app with Gunicorn
 CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--workers=1", "--threads=1", "--timeout=120"]
-
