@@ -6,3 +6,12 @@ env/
 .venv/
 uploads/
 results/
+.DS_Store
+*.log
+*.bak
+*.swp
+*.zip
+*.tar.gz
+.idea/
+.vscode/
+*.egg-info/
