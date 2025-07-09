@@ -10,17 +10,17 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python requirements
+# Copy requirements
 COPY requirements.txt .
 
-# ✅ Install torch first to avoid numpy runtime error
+# ✅ Install torch + torchvision first
 RUN pip install --no-cache-dir torch torchvision
 
-# ✅ Install other dependencies
+# ✅ Then install your other packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ✅ Reinstall numpy (important fix for PyTorch)
-RUN pip install --no-cache-dir --force-reinstall numpy
+# ✅ Downgrade NumPy to a stable version
+RUN pip install --no-cache-dir numpy==1.26.4
 
 # Copy the rest of the app
 COPY . .
