@@ -4,8 +4,12 @@ from flask import Flask, render_template, request, redirect, url_for
 from PIL import Image
 import numpy as np
 import torch
-from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
+try:
+    from basicsr.archs.rrdbnet_arch import RRDBNet
+except ImportError:
+    # Fallback for older versions
+    from realesrgan.archs.rrdbnet_arch import RRDBNet
 
 # Flask setup
 app = Flask(__name__)
@@ -20,14 +24,36 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 # Load default model once at startup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Default model architecture
-base_model = RRDBNet(
-    num_in_ch=3, num_out_ch=3,
-    num_feat=64,
-    num_block=23,
-    num_grow_ch=32,
-    scale=4
-)
+# Function to get the right model architecture based on model name
+def get_model_architecture(model_name, scale):
+    """Get the appropriate model architecture based on model name"""
+    if 'anime' in model_name.lower():
+        # For anime models, use fewer blocks
+        return RRDBNet(
+            num_in_ch=3, num_out_ch=3,
+            num_feat=64,
+            num_block=6,
+            num_grow_ch=32,
+            scale=scale
+        )
+    elif 'gfpgan' in model_name.lower() or 'face' in model_name.lower():
+        # For face restoration models
+        return RRDBNet(
+            num_in_ch=3, num_out_ch=3,
+            num_feat=64,
+            num_block=23,
+            num_grow_ch=32,
+            scale=scale
+        )
+    else:
+        # Default RealESRGAN model
+        return RRDBNet(
+            num_in_ch=3, num_out_ch=3,
+            num_feat=64,
+            num_block=23,
+            num_grow_ch=32,
+            scale=scale
+        )
 
 # Function to create upsampler per model/scale/tile setting
 def get_upsampler(model_name, scale, tile, tile_pad, use_half):
@@ -35,24 +61,23 @@ def get_upsampler(model_name, scale, tile, tile_pad, use_half):
     if not os.path.exists(model_path):
         return None, f"Model file not found: {model_path}"
     
-    model = RRDBNet(
-        num_in_ch=3, num_out_ch=3,
-        num_feat=64,
-        num_block=6 if 'anime' in model_name else 23,
-        num_grow_ch=32,
-        scale=scale
-    )
-    upsampler = RealESRGANer(
-        scale=scale,
-        model_path=model_path,
-        model=model,
-        tile=tile,
-        tile_pad=tile_pad,
-        pre_pad=0,
-        half=use_half and torch.cuda.is_available(),
-        device=device
-    )
-    return upsampler, None
+    try:
+        # Get the appropriate model architecture
+        model = get_model_architecture(model_name, scale)
+        
+        upsampler = RealESRGANer(
+            scale=scale,
+            model_path=model_path,
+            model=model,
+            tile=tile,
+            tile_pad=tile_pad,
+            pre_pad=0,
+            half=use_half and torch.cuda.is_available(),
+            device=device
+        )
+        return upsampler, None
+    except Exception as e:
+        return None, f"Error loading model: {str(e)}"
 
 # Index Route: Image upload form
 @app.route('/', methods=['GET', 'POST'])
@@ -78,8 +103,8 @@ def index():
             img = Image.open(input_path).convert('RGB')
             img.thumbnail((512, 512))  # Resize to reduce RAM usage
             img_np = np.array(img)
-        except:
-            return render_template("index.html", error="Invalid image file.")
+        except Exception as e:
+            return render_template("index.html", error=f"Invalid image file: {str(e)}")
 
         # Load model
         upsampler, error = get_upsampler(model_name, scale, tile_size, tile_pad, use_half)
@@ -92,13 +117,18 @@ def index():
             output_img = Image.fromarray(output_np)
         except Exception as e:
             return render_template("index.html", error=f"Enhancement failed: {str(e)}")
+        finally:
+            # Clean up upsampler
+            if 'upsampler' in locals():
+                del upsampler
+            torch.cuda.empty_cache()
 
         # Save output image
         output_path = os.path.join(RESULT_FOLDER, f"result_{filename}")
         output_img.save(output_path)
 
         # Free memory
-        del img, img_np, output_np, output_img, upsampler
+        del img, img_np, output_np, output_img
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -107,8 +137,12 @@ def index():
                                output_url=f"/{output_path}")
     return render_template("index.html")
 
-# Run app
+# Health check route
+@app.route('/health')
+def health_check():
+    return {'status': 'healthy', 'device': str(device)}
 
+# Run app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
