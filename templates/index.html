@@ -2,8 +2,8 @@
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Image Upscaler</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -12,10 +12,14 @@
   <div class="container">
     <h1>🔼 Image Upscaler</h1>
 
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
     <form id="upload-form" enctype="multipart/form-data">
       <div class="form-section">
         <label>Upload Image:</label>
-        <input type="file" name="image" required>
+        <input type="file" name="image" required />
       </div>
 
       <div class="form-section">
@@ -26,104 +30,114 @@
         </select>
       </div>
 
+      <div id="progress-container" style="display: none;">
+        <div id="progress-bar"></div>
+        <span id="progress-text">0%</span>
+      </div>
+
       <center>
         <button type="submit" class="submit-btn">🚀 Enhance Image</button>
       </center>
     </form>
 
-    <div id="status" style="margin-top: 20px; text-align: center;"></div>
+    <!-- Result Section -->
+    <div id="result-container" style="display: none;">
+      <h2>✨ Upscaling Complete</h2>
 
-    <div id="progress-container" style="display:none;">
-      <div id="progress-bar" style="width: 0%; height: 20px; background: #4caf50;"></div>
-      <span id="progress-text">0%</span>
-    </div>
+      <div class="image-grid">
+        <div class="image-block">
+          <h3>Original</h3>
+          <div class="image-wrapper">
+            <img src="{{ input_url }}" alt="Original Image">
+          </div>
+        </div>
+        <div class="image-block">
+          <h3>Upscaled</h3>
+          <div class="image-wrapper">
+            <img src="{{ output_url }}" alt="Upscaled Image">
+          </div>
+        </div>
+      </div>
 
-    <div id="result" style="display:none; margin-top: 20px;">
-      <h2>Enhanced Image:</h2>
-      <img id="output-image" src="" alt="Enhanced Output" style="max-width: 100%;">
+
+      <div class="actions">
+        <a id="download-link" class="submit-btn" download>⬇️ Download Output</a>
+        <a href="{{ url_for('index') }}" class="submit-btn">🔁 Upscale Another</a>
+      </div>
     </div>
   </div>
 
   <footer>
-    Developed with ❤️ by <strong>Punit Kanzariya</strong><br>
+    Developed with ❤️ by <strong>Punit Kanzariya</strong><br />
     <a href="https://gitlab.com/Punitkanzariya" target="_blank">Visit my GitLab</a>
   </footer>
 
   <script>
-    const form = document.getElementById("upload-form");
-    const button = document.querySelector(".submit-btn");
-    const progressContainer = document.getElementById("progress-container");
-    const progressBar = document.getElementById("progress-bar");
-    const progressText = document.getElementById("progress-text");
-    const resultDiv = document.getElementById("result");
-    const outputImage = document.getElementById("output-image");
-    const status = document.getElementById("status");
+    const form = document.getElementById('upload-form');
+    const button = document.querySelector('.submit-btn');
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const resultContainer = document.getElementById('result-container');
+    const originalImage = document.getElementById('original-image');
+    const enhancedImage = document.getElementById('enhanced-image');
+    const downloadLink = document.getElementById('download-link');
 
-    form.onsubmit = async (e) => {
+    form.addEventListener('submit', async function (e) {
       e.preventDefault();
+
+      progressContainer.style.display = 'block';
+      resultContainer.style.display = 'none';
       button.disabled = true;
-      button.innerText = "🔄 Uploading...";
-      status.textContent = "";
-      progressContainer.style.display = "block";
-      resultDiv.style.display = "none";
-      progressBar.style.width = "0%";
-      progressText.textContent = "0%";
+      button.innerText = '🔄 Enhancing... Please wait';
 
       const formData = new FormData(form);
-      const res = await fetch("/enhance", {
-        method: "POST",
+      const response = await fetch('/enhance', {
+        method: 'POST',
         body: formData
       });
 
-      const data = await res.json();
-      if (data.task_id) {
-        simulateProgress(); // fake loading bar
-        pollStatus(data.task_id);
-      } else {
-        status.textContent = "❌ Failed to submit task.";
-        button.disabled = false;
-        button.innerText = "🚀 Enhance Image";
+      if (!response.ok) {
+        alert('Upload failed');
+        return;
       }
-    };
 
-    function simulateProgress() {
+      const { task_id } = await response.json();
+
       let progress = 0;
       const interval = setInterval(() => {
-        if (progress >= 90) {
-          clearInterval(interval);
-        } else {
-          progress += Math.floor(Math.random() * 4) + 1;
-          progress = Math.min(progress, 90);
-          progressBar.style.width = progress + "%";
-          progressText.textContent = progress + "%";
-        }
-      }, 300);
-    }
+        if (progress >= 98) clearInterval(interval);
+        progress += Math.floor(Math.random() * 3) + 1;
+        progress = Math.min(progress, 98);
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = `${progress}%`;
+      }, 200);
 
-    async function pollStatus(task_id) {
-      const interval = setInterval(async () => {
+      const poll = setInterval(async () => {
         const res = await fetch(`/status/${task_id}`);
         const data = await res.json();
 
-        if (data.status === "done") {
+        if (data.status === 'done') {
+          clearInterval(poll);
           clearInterval(interval);
-          progressBar.style.width = "100%";
-          progressText.textContent = "100%";
-          outputImage.src = data.output_url;
-          resultDiv.style.display = "block";
-          status.textContent = "✅ Enhancement complete.";
+          progressBar.style.width = `100%`;
+          progressText.textContent = `100%`;
+
+          originalImage.src = data.input_url;
+          enhancedImage.src = data.output_url;
+          downloadLink.href = data.output_url;
+          resultContainer.style.display = 'block';
           button.disabled = false;
-          button.innerText = "🚀 Enhance Another";
-        } else if (data.status === "error") {
+          button.innerText = '🚀 Enhance Image';
+        } else if (data.status === 'error') {
+          clearInterval(poll);
           clearInterval(interval);
-          status.textContent = "❌ Error: " + data.error;
+          alert('Error: ' + data.error);
           button.disabled = false;
-          button.innerText = "🚀 Try Again";
-        } else {
-          status.textContent = "⏳ Processing...";
+          button.innerText = '🚀 Enhance Image';
         }
-      }, 3000);
-    }
+      }, 2000);
+    });
   </script>
 </body>
 

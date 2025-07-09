@@ -43,21 +43,31 @@ h2 {
   margin-bottom: 25px;
 }
 
-/* Image Grid */
-.image-grid {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  margin: 20px 0;
-  flex-wrap: wrap;
+.image-block {
+  flex: 1 1 45%;
+  text-align: center;
 }
 
+
+.image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 30px;
+  margin: 20px 0;
+}
+
+
 .image-grid img {
-  flex: 1;
+  width: 100%;
   max-width: 100%;
   height: auto;
+  max-height: 350px;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
   border: 2px solid #555;
   border-radius: 8px;
+  background-color: #fff; /* to match background and look cleaner */
 }
 
 .image-grid img:hover {

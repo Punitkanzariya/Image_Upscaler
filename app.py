@@ -1,9 +1,9 @@
-# async_image_upscaler.py
+# app.py
 import os
 import gc
 import uuid
 import threading
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 from PIL import Image
 import numpy as np
 import torch
@@ -18,8 +18,6 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 RESULT_FOLDER = 'static/results'
 WEIGHTS_FOLDER = 'weights'
-TASKS = {}
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
@@ -27,93 +25,85 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if not torch.cuda.is_available():
     torch.set_num_threads(1)
 
+task_status = {}
+
 def get_model_architecture(model_name, scale):
     if model_name == 'RealESRGAN_x4plus':
-        return RRDBNet(3, 3, 64, 23, 32, scale)
+        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
     elif model_name == 'RealESRGAN_x4plus_anime_6B':
-        return RRDBNet(3, 3, 64, 6, 32, scale)
+        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=scale)
     else:
-        return RRDBNet(3, 3, 64, 23, 32, scale)
+        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
 
-def get_upsampler(model_name, scale, tile, tile_pad, use_half):
-    model_path = os.path.join(WEIGHTS_FOLDER, f"{model_name}.pth")
-    if not os.path.exists(model_path):
-        return None, f"Model file not found: {model_path}"
+def enhance_image(task_id, input_path, output_path, model_name):
     try:
-        model = get_model_architecture(model_name, scale)
-        upsampler = RealESRGANer(
-            scale=scale,
-            model_path=model_path,
-            model=model,
-            tile=tile,
-            tile_pad=tile_pad,
-            pre_pad=0,
-            half=use_half and torch.cuda.is_available(),
-            device=device
-        )
-        return upsampler, None
-    except Exception as e:
-        return None, f"Error loading model: {str(e)}"
-
-def enhance_async(task_id, image_path, model_name):
-    try:
-        img = Image.open(image_path).convert('RGB')
-        max_size = 400 if not torch.cuda.is_available() else 800
-        img.thumbnail((max_size, max_size))
+        img = Image.open(input_path).convert('RGB')
+        img.thumbnail((800, 800))
         img_np = np.array(img)
 
-        upsampler, error = get_upsampler(model_name, 4, 128, 8, True)
-        if error:
-            TASKS[task_id] = {'status': 'failed', 'error': error}
-            return
+        model = get_model_architecture(model_name, scale=4)
+        model_path = os.path.join(WEIGHTS_FOLDER, f"{model_name}.pth")
+
+        upsampler = RealESRGANer(
+            scale=4,
+            model_path=model_path,
+            model=model,
+            tile=256,
+            tile_pad=10,
+            pre_pad=0,
+            half=True and torch.cuda.is_available(),
+            device=device
+        )
 
         output_np, _ = upsampler.enhance(img_np, outscale=4)
         output_img = Image.fromarray(output_np)
-
-        output_filename = f"result_{os.path.basename(image_path)}"
-        output_path = os.path.join(RESULT_FOLDER, output_filename)
         output_img.save(output_path)
 
-        TASKS[task_id] = {'status': 'done', 'result': output_filename}
-
+        task_status[task_id] = {
+            "status": "done",
+            "input_url": f"/{input_path}",
+            "output_url": f"/{output_path}"
+        }
     except Exception as e:
-        TASKS[task_id] = {'status': 'failed', 'error': str(e)}
+        task_status[task_id] = {"status": "error", "error": str(e)}
     finally:
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        gc.collect()
 
 @app.route('/', methods=['GET'])
 def index():
-    return render_template("index.html")
+    return render_template('index.html')
 
 @app.route('/enhance', methods=['POST'])
 def enhance():
     image_file = request.files.get('image')
-    model_name = request.form.get('model', 'RealESRGAN_x4plus')
-    if not image_file:
-        return jsonify({'error': 'No image uploaded'}), 400
+    model_name = request.form.get('model')
 
-    filename = f"{uuid.uuid4().hex}_{image_file.filename}"
-    input_path = os.path.join(UPLOAD_FOLDER, filename)
-    image_file.save(input_path)
+    if not image_file:
+        return jsonify({"status": "error", "error": "No image uploaded"}), 400
 
     task_id = uuid.uuid4().hex
-    TASKS[task_id] = {'status': 'processing'}
-    threading.Thread(target=enhance_async, args=(task_id, input_path, model_name)).start()
-    return jsonify({'task_id': task_id}), 202
+    input_path = os.path.join(UPLOAD_FOLDER, f"{task_id}.jpg")
+    output_path = os.path.join(RESULT_FOLDER, f"{task_id}.jpg")
+    image_file.save(input_path)
 
-@app.route('/status/<task_id>')
-def task_status(task_id):
-    return jsonify(TASKS.get(task_id, {'status': 'not_found'}))
+    task_status[task_id] = {"status": "processing"}
+    threading.Thread(target=enhance_image, args=(task_id, input_path, output_path, model_name)).start()
 
-@app.route('/result/<filename>')
-def get_result(filename):
-    return send_from_directory(RESULT_FOLDER, filename)
+    return jsonify({"task_id": task_id}), 202
 
-@app.route('/health')
-def health():
-    return {'status': 'ok', 'device': str(device)}
+@app.route('/status/<task_id>', methods=['GET'])
+def check_status(task_id):
+    return jsonify(task_status.get(task_id, {"status": "unknown"}))
+
+@app.route('/result/<task_id>', methods=['GET'])
+def result(task_id):
+    task = task_status.get(task_id)
+    if not task or task.get("status") != "done":
+        return "Result not available or still processing", 404
+    return render_template("result.html", input_url=task["input_url"], output_url=task["output_url"])
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)

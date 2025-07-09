@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
@@ -10,29 +10,29 @@
 
 <body>
   <div class="container">
-    <h2>✨ Upscaling Complete</h2>
+    <h1>✨ Upscaling Complete</h1>
 
     <div class="image-grid">
-      <div style="flex: 1; text-align:center;">
+      <div class="image-block">
         <h3>Original</h3>
-        <img src="{{ input_url }}" alt="Original Image" style="max-width:100%; height:auto; max-height:400px;">
+        <img src="{{ input_url }}" alt="Original Image" class="result-image">
       </div>
-      <div style="flex: 1; text-align:center;">
+      <div class="image-block">
         <h3>Upscaled</h3>
-        <img src="{{ output_url }}" alt="Upscaled Image" style="max-width:100%; height:auto; max-height:400px;">
+        <img src="{{ output_url }}" alt="Upscaled Image" class="result-image">
       </div>
     </div>
 
     <div class="actions">
-      <a href="{{ output_url }}" class="submit-btn" download>⬇️ Download Output</a> |
+      <a href="{{ output_url }}" class="submit-btn" download>⬇️ Download Output</a>
       <a href="{{ url_for('index') }}" class="submit-btn">🔁 Upscale Another</a>
     </div>
   </div>
+
   <footer>
     Developed with ❤️ by <strong>Punit Kanzariya</strong><br>
     <a href="https://gitlab.com/Punitkanzariya" target="_blank">Visit my GitLab</a>
   </footer>
-
 </body>
 
 </html>
