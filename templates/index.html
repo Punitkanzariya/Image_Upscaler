@@ -39,7 +39,6 @@
         <button type="submit" class="submit-btn">🚀 Enhance Image</button>
       </center>
     </form>
-
     <!-- Result Section -->
     <div id="result-container" style="display: none;">
       <h2>✨ Upscaling Complete</h2>
@@ -48,97 +47,96 @@
         <div class="image-block">
           <h3>Original</h3>
           <div class="image-wrapper">
-            <img src="{{ input_url }}" alt="Original Image">
+            <img id="original-image" src="#" alt="Original Image" class="result-image">
           </div>
         </div>
         <div class="image-block">
           <h3>Upscaled</h3>
           <div class="image-wrapper">
-            <img src="{{ output_url }}" alt="Upscaled Image">
+            <img id="enhanced-image" src="#" alt="Upscaled Image" class="result-image">
           </div>
         </div>
       </div>
 
-
       <div class="actions">
         <a id="download-link" class="submit-btn" download>⬇️ Download Output</a>
-        <a href="{{ url_for('index') }}" class="submit-btn">🔁 Upscale Another</a>
+        <a href="/" class="submit-btn">🔁 Upscale Another</a>
       </div>
     </div>
-  </div>
 
-  <footer>
-    Developed with ❤️ by <strong>Punit Kanzariya</strong><br />
-    <a href="https://gitlab.com/Punitkanzariya" target="_blank">Visit my GitLab</a>
-  </footer>
 
-  <script>
-    const form = document.getElementById('upload-form');
-    const button = document.querySelector('.submit-btn');
-    const progressContainer = document.getElementById('progress-container');
-    const progressBar = document.getElementById('progress-bar');
-    const progressText = document.getElementById('progress-text');
-    const resultContainer = document.getElementById('result-container');
-    const originalImage = document.getElementById('original-image');
-    const enhancedImage = document.getElementById('enhanced-image');
-    const downloadLink = document.getElementById('download-link');
+    <footer>
+      Developed with ❤️ by <strong>Punit Kanzariya</strong><br />
+      <a href="https://gitlab.com/Punitkanzariya" target="_blank">Visit my GitLab</a>
+    </footer>
 
-    form.addEventListener('submit', async function (e) {
-      e.preventDefault();
+    <script>
+      const form = document.getElementById('upload-form');
+      const button = document.querySelector('.submit-btn');
+      const progressContainer = document.getElementById('progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const progressText = document.getElementById('progress-text');
+      const resultContainer = document.getElementById('result-container');
+      const originalImage = document.getElementById('original-image');
+      const enhancedImage = document.getElementById('enhanced-image');
+      const downloadLink = document.getElementById('download-link');
 
-      progressContainer.style.display = 'block';
-      resultContainer.style.display = 'none';
-      button.disabled = true;
-      button.innerText = '🔄 Enhancing... Please wait';
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
 
-      const formData = new FormData(form);
-      const response = await fetch('/enhance', {
-        method: 'POST',
-        body: formData
-      });
+        progressContainer.style.display = 'block';
+        resultContainer.style.display = 'none';
+        button.disabled = true;
+        button.innerText = '🔄 Enhancing... Please wait';
 
-      if (!response.ok) {
-        alert('Upload failed');
-        return;
-      }
+        const formData = new FormData(form);
+        const response = await fetch('/enhance', {
+          method: 'POST',
+          body: formData
+        });
 
-      const { task_id } = await response.json();
-
-      let progress = 0;
-      const interval = setInterval(() => {
-        if (progress >= 98) clearInterval(interval);
-        progress += Math.floor(Math.random() * 3) + 1;
-        progress = Math.min(progress, 98);
-        progressBar.style.width = `${progress}%`;
-        progressText.textContent = `${progress}%`;
-      }, 200);
-
-      const poll = setInterval(async () => {
-        const res = await fetch(`/status/${task_id}`);
-        const data = await res.json();
-
-        if (data.status === 'done') {
-          clearInterval(poll);
-          clearInterval(interval);
-          progressBar.style.width = `100%`;
-          progressText.textContent = `100%`;
-
-          originalImage.src = data.input_url;
-          enhancedImage.src = data.output_url;
-          downloadLink.href = data.output_url;
-          resultContainer.style.display = 'block';
-          button.disabled = false;
-          button.innerText = '🚀 Enhance Image';
-        } else if (data.status === 'error') {
-          clearInterval(poll);
-          clearInterval(interval);
-          alert('Error: ' + data.error);
-          button.disabled = false;
-          button.innerText = '🚀 Enhance Image';
+        if (!response.ok) {
+          alert('Upload failed');
+          return;
         }
-      }, 2000);
-    });
-  </script>
+
+        const { task_id } = await response.json();
+
+        let progress = 0;
+        const interval = setInterval(() => {
+          if (progress >= 98) clearInterval(interval);
+          progress += Math.floor(Math.random() * 3) + 1;
+          progress = Math.min(progress, 98);
+          progressBar.style.width = `${progress}%`;
+          progressText.textContent = `${progress}%`;
+        }, 200);
+
+        const poll = setInterval(async () => {
+          const res = await fetch(`/status/${task_id}`);
+          const data = await res.json();
+
+          if (data.status === 'done') {
+            clearInterval(poll);
+            clearInterval(interval);
+            progressBar.style.width = `100%`;
+            progressText.textContent = `100%`;
+
+            originalImage.src = data.input_url;
+            enhancedImage.src = data.output_url;
+            downloadLink.href = data.output_url;
+            resultContainer.style.display = 'block';
+            button.disabled = false;
+            button.innerText = '🚀 Enhance Image';
+          } else if (data.status === 'error') {
+            clearInterval(poll);
+            clearInterval(interval);
+            alert('Error: ' + data.error);
+            button.disabled = false;
+            button.innerText = '🚀 Enhance Image';
+          }
+        }, 2000);
+      });
+    </script>
 </body>
 
 </html>
