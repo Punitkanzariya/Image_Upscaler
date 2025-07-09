@@ -1,8 +1,10 @@
 services:
   - type: web
-    name: flask-image-enhancer
+    name: image-upscaler
     env: python
-    plan: starter  # change to free if you want (not recommended for RealESRGAN)
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --workers 1 --threads 1 --timeout 120
-    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
