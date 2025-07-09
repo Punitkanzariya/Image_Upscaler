@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: image-upscaler
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true

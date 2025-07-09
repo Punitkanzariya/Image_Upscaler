@@ -1,6 +1,8 @@
 __pycache__/
-*.zip
-*.tar.gz
-*.pth
+*.pyc
+*.pyo
+*.pyd
+env/
+.venv/
 uploads/
 results/

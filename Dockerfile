@@ -1,9 +1,5 @@
-# Use official Python image
+# Use lightweight Python base
 FROM python:3.10-slim
-
-# Set environment
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
 
 # Set work directory
 WORKDIR /app
@@ -19,11 +15,11 @@ COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Copy project files
+# Copy app code
 COPY . .
 
-# Set default port for Flask
-ENV PORT=8080
+# Port Flask will run on
+ENV PORT 10000
 
-# Tell Fly.io to run this command
-CMD ["gunicorn", "app:app", "--workers", "1", "--threads", "1", "--timeout", "120", "--bind", "0.0.0.0:8080"]
+# Run the Flask app via Gunicorn
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--workers=1", "--threads=1", "--timeout=120"]
