@@ -1,6 +1,9 @@
+# async_image_upscaler.py
 import os
 import gc
-from flask import Flask, render_template, request
+import uuid
+import threading
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from PIL import Image
 import numpy as np
 import torch
@@ -15,26 +18,23 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 RESULT_FOLDER = 'static/results'
 WEIGHTS_FOLDER = 'weights'
+TASKS = {}
 
-# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
-# Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if not torch.cuda.is_available():
     torch.set_num_threads(1)
 
-# ✅ Correct architecture per model
 def get_model_architecture(model_name, scale):
     if model_name == 'RealESRGAN_x4plus':
-        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+        return RRDBNet(3, 3, 64, 23, 32, scale)
     elif model_name == 'RealESRGAN_x4plus_anime_6B':
-        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=scale)
+        return RRDBNet(3, 3, 64, 6, 32, scale)
     else:
-        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+        return RRDBNet(3, 3, 64, 23, 32, scale)
 
-# Build upsampler
 def get_upsampler(model_name, scale, tile, tile_pad, use_half):
     model_path = os.path.join(WEIGHTS_FOLDER, f"{model_name}.pth")
     if not os.path.exists(model_path):
@@ -55,71 +55,65 @@ def get_upsampler(model_name, scale, tile, tile_pad, use_half):
     except Exception as e:
         return None, f"Error loading model: {str(e)}"
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        image_file = request.files.get('image')
-        model_name = request.form.get('model', 'RealESRGAN_x4plus')
-        scale = 4
-        tile_size = 256
-        tile_pad = 10
-        use_half = True
+def enhance_async(task_id, image_path, model_name):
+    try:
+        img = Image.open(image_path).convert('RGB')
+        max_size = 400 if not torch.cuda.is_available() else 800
+        img.thumbnail((max_size, max_size))
+        img_np = np.array(img)
 
-        if not image_file:
-            return render_template("index.html", error="Please upload an image.")
-
-        filename = image_file.filename
-        input_path = os.path.join(UPLOAD_FOLDER, filename)
-        image_file.save(input_path)
-
-        try:
-            img = Image.open(input_path).convert('RGB')
-            max_size = 400 if not torch.cuda.is_available() else 800
-            img.thumbnail((max_size, max_size))
-            img_np = np.array(img)
-        except Exception as e:
-            return render_template("index.html", error=f"Invalid image: {str(e)}")
-
-        upsampler, error = get_upsampler(model_name, scale, tile_size, tile_pad, use_half)
+        upsampler, error = get_upsampler(model_name, 4, 128, 8, True)
         if error:
-            return render_template("index.html", error=error)
+            TASKS[task_id] = {'status': 'failed', 'error': error}
+            return
 
-        try:
-            output_np, _ = upsampler.enhance(img_np, outscale=scale)
-            output_img = Image.fromarray(output_np)
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                return render_template("index.html", error="Image too large. Try smaller.")
-            return render_template("index.html", error=f"Enhancement failed: {str(e)}")
-        except Exception as e:
-            return render_template("index.html", error=f"Enhancement failed: {str(e)}")
-        finally:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
+        output_np, _ = upsampler.enhance(img_np, outscale=4)
+        output_img = Image.fromarray(output_np)
 
-        output_path = os.path.join(RESULT_FOLDER, f"result_{filename}")
+        output_filename = f"result_{os.path.basename(image_path)}"
+        output_path = os.path.join(RESULT_FOLDER, output_filename)
         output_img.save(output_path)
 
-        del img, img_np, output_np, output_img
-        gc.collect()
+        TASKS[task_id] = {'status': 'done', 'result': output_filename}
+
+    except Exception as e:
+        TASKS[task_id] = {'status': 'failed', 'error': str(e)}
+    finally:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        gc.collect()
 
-        return render_template("result.html",
-                               input_url=f"/{UPLOAD_FOLDER}/{filename}",
-                               output_url=f"/{output_path}")
+@app.route('/', methods=['GET'])
+def index():
     return render_template("index.html")
 
+@app.route('/enhance', methods=['POST'])
+def enhance():
+    image_file = request.files.get('image')
+    model_name = request.form.get('model', 'RealESRGAN_x4plus')
+    if not image_file:
+        return jsonify({'error': 'No image uploaded'}), 400
+
+    filename = f"{uuid.uuid4().hex}_{image_file.filename}"
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    image_file.save(input_path)
+
+    task_id = uuid.uuid4().hex
+    TASKS[task_id] = {'status': 'processing'}
+    threading.Thread(target=enhance_async, args=(task_id, input_path, model_name)).start()
+    return jsonify({'task_id': task_id}), 202
+
+@app.route('/status/<task_id>')
+def task_status(task_id):
+    return jsonify(TASKS.get(task_id, {'status': 'not_found'}))
+
+@app.route('/result/<filename>')
+def get_result(filename):
+    return send_from_directory(RESULT_FOLDER, filename)
+
 @app.route('/health')
-def health_check():
-    return {
-        'status': 'healthy',
-        'device': str(device),
-        'cuda_available': torch.cuda.is_available(),
-        'weights_folder_exists': os.path.exists(WEIGHTS_FOLDER)
-    }
+def health():
+    return {'status': 'ok', 'device': str(device)}
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))

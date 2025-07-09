@@ -1,10 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
-  <meta name="google-site-verification" content="VSf5g09h4vZHBgNMgJIMJjZtGC-OpEVReh_YC-gfvKM" />
-  <meta name="google-site-verification" content="Y5kS1bM2WnpH6E6PSfYsPvjCs9o0H3if3XnHVIuNXSA" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Image Upscaler</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -12,13 +10,9 @@
 
 <body>
   <div class="container">
-    <h1>🔼Image Upscaler</h1>
+    <h1>🔼 Image Upscaler</h1>
 
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
-
-    <form method="POST" enctype="multipart/form-data">
+    <form id="upload-form" enctype="multipart/form-data">
       <div class="form-section">
         <label>Upload Image:</label>
         <input type="file" name="image" required>
@@ -32,15 +26,22 @@
         </select>
       </div>
 
-      <div id="progress-container" style="display:none;">
-        <div id="progress-bar"></div>
-        <span id="progress-text">0%</span>
-      </div>
-
       <center>
         <button type="submit" class="submit-btn">🚀 Enhance Image</button>
       </center>
     </form>
+
+    <div id="status" style="margin-top: 20px; text-align: center;"></div>
+
+    <div id="progress-container" style="display:none;">
+      <div id="progress-bar" style="width: 0%; height: 20px; background: #4caf50;"></div>
+      <span id="progress-text">0%</span>
+    </div>
+
+    <div id="result" style="display:none; margin-top: 20px;">
+      <h2>Enhanced Image:</h2>
+      <img id="output-image" src="" alt="Enhanced Output" style="max-width: 100%;">
+    </div>
   </div>
 
   <footer>
@@ -49,31 +50,81 @@
   </footer>
 
   <script>
-    const form = document.querySelector("form");
+    const form = document.getElementById("upload-form");
     const button = document.querySelector(".submit-btn");
     const progressContainer = document.getElementById("progress-container");
     const progressBar = document.getElementById("progress-bar");
     const progressText = document.getElementById("progress-text");
+    const resultDiv = document.getElementById("result");
+    const outputImage = document.getElementById("output-image");
+    const status = document.getElementById("status");
 
-    form.addEventListener("submit", function () {
-      progressContainer.style.display = "block";
+    form.onsubmit = async (e) => {
+      e.preventDefault();
       button.disabled = true;
-      button.innerText = "🔄 Enhancing... Please wait";
+      button.innerText = "🔄 Uploading...";
+      status.textContent = "";
+      progressContainer.style.display = "block";
+      resultDiv.style.display = "none";
+      progressBar.style.width = "0%";
+      progressText.textContent = "0%";
 
+      const formData = new FormData(form);
+      const res = await fetch("/enhance", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      if (data.task_id) {
+        simulateProgress(); // fake loading bar
+        pollStatus(data.task_id);
+      } else {
+        status.textContent = "❌ Failed to submit task.";
+        button.disabled = false;
+        button.innerText = "🚀 Enhance Image";
+      }
+    };
+
+    function simulateProgress() {
       let progress = 0;
       const interval = setInterval(() => {
-        if (progress >= 99) {
+        if (progress >= 90) {
           clearInterval(interval);
         } else {
-          progress += Math.floor(Math.random() * 3) + 1;
-          progress = Math.min(progress, 99);
+          progress += Math.floor(Math.random() * 4) + 1;
+          progress = Math.min(progress, 90);
           progressBar.style.width = progress + "%";
           progressText.textContent = progress + "%";
         }
-      }, 200);
-    });
-  </script>
+      }, 300);
+    }
 
+    async function pollStatus(task_id) {
+      const interval = setInterval(async () => {
+        const res = await fetch(`/status/${task_id}`);
+        const data = await res.json();
+
+        if (data.status === "done") {
+          clearInterval(interval);
+          progressBar.style.width = "100%";
+          progressText.textContent = "100%";
+          outputImage.src = data.output_url;
+          resultDiv.style.display = "block";
+          status.textContent = "✅ Enhancement complete.";
+          button.disabled = false;
+          button.innerText = "🚀 Enhance Another";
+        } else if (data.status === "error") {
+          clearInterval(interval);
+          status.textContent = "❌ Error: " + data.error;
+          button.disabled = false;
+          button.innerText = "🚀 Try Again";
+        } else {
+          status.textContent = "⏳ Processing...";
+        }
+      }, 3000);
+    }
+  </script>
 </body>
 
 </html>
