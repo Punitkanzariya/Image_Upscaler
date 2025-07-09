@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="google-site-verification" content="VSf5g09h4vZHBgNMgJIMJjZtGC-OpEVReh_YC-gfvKM" />
+  <meta name="google-site-verification" content="Y5kS1bM2WnpH6E6PSfYsPvjCs9o0H3if3XnHVIuNXSA" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Upscaler</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div class="container">
+    <h1>🔼Image Upscaler</h1>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" enctype="multipart/form-data">
+      <div class="form-section">
+        <label>Upload Image:</label>
+        <input type="file" name="image" required>
+      </div>
+
+      <div class="form-section">
+        <label>Model:</label>
+        <select name="model">
+          <option value="RealESRGAN_x4plus">Enhance</option>
+          <option value="RealESRGAN_x4plus_anime_6B">Anime</option>
+        </select>
+
+        <label>Scale:</label>
+        <select name="scale">
+          <option value="2">2x</option>
+          <option value="4" selected>4x</option>
+        </select>
+
+        <label>Tile Size:</label>
+        <input type="number" name="tile_size" value="256">
+
+        <label>Tile Padding:</label>
+        <input type="number" name="tile_pad" value="10">
+      </div>
+
+      <div id="progress-container" style="display:none;">
+        <div id="progress-bar"></div>
+        <span id="progress-text">0%</span>
+      </div>
+
+      <center>
+        <button type="submit" class="submit-btn">🚀 Enhance Image</button>
+      </center>
+    </form>
+  </div>
+
+  <script>
+    const form = document.querySelector("form");
+    const button = document.querySelector(".submit-btn");
+    const progressContainer = document.getElementById("progress-container");
+    const progressBar = document.getElementById("progress-bar");
+    const progressText = document.getElementById("progress-text");
+
+    form.addEventListener("submit", function () {
+      // Show progress bar
+      progressContainer.style.display = "block";
+
+      // Disable button and update text 
+      button.disabled = true;
+      button.innerText = "🔄 Enhancing... Please wait";
+
+      // Simulated progress
+      let progress = 0;
+      const interval = setInterval(() => {
+        if (progress >= 99) {
+          clearInterval(interval);
+        } else {
+          progress += Math.floor(Math.random() * 3) + 1;
+          progress = Math.min(progress, 99);
+          progressBar.style.width = progress + "%";
+          progressText.textContent = progress + "%";
+        }
+      }, 200);
+    });
+  </script>
+
+</body>
+
+</html>

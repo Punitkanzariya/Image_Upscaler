@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced Result</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div class="container">
+    <h2>✨ Upscaling Complete</h2>
+
+    <div class="image-grid">
+      <div style="flex: 1; text-align:center;">
+        <h3>Original</h3>
+        <img src="{{ input_url }}" alt="Original Image" style="max-width:100%; height:auto; max-height:400px;">
+      </div>
+      <div style="flex: 1; text-align:center;">
+        <h3>Upscaled</h3>
+        <img src="{{ output_url }}" alt="Upscaled Image" style="max-width:100%; height:auto; max-height:400px;">
+      </div>
+    </div>
+
+    <div class="actions">
+      <a href="{{ output_url }}" class="submit-btn" download>⬇️ Download Output</a> |
+      <a href="{{ url_for('index') }}" class="submit-btn">🔁 Upscale Another</a>
+    </div>
+  </div>
+</body>
+
+</html>
