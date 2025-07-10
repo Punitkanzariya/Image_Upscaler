@@ -67,13 +67,18 @@ def get_model_architecture(model_name, scale):
 
 def enhance_image(task_id, input_path, output_path, preview_input_path, model_name):
     try:
-        img = Image.open(input_path).convert('RGB')
-        img.thumbnail((512, 512))  # Resize input to save memory
-        img_np = np.array(img)
+        with Image.open(input_path).convert('RGB') as img:
+            img.thumbnail((384, 384))  # Smaller thumbnail to save RAM
+            img_np = np.array(img)
 
-        # Save preview of original image
-        img.save(preview_input_path, format="WEBP", optimize=True, quality=80)
+            # Save compressed input preview (WebP)
+            img.save(preview_input_path, format="WEBP", optimize=True, quality=75)
 
+        # Free original image
+        del img
+        gc.collect()
+
+        # === Load lightweight model only ===
         model = get_model_architecture(model_name, scale=4)
         model_path = os.path.join(WEIGHTS_FOLDER, f"{model_name}.pth")
 
@@ -81,40 +86,42 @@ def enhance_image(task_id, input_path, output_path, preview_input_path, model_na
             scale=4,
             model_path=model_path,
             model=model,
-            tile=128,
-            tile_pad=10,
+            tile=64,               # 🔥 Critical: smaller tiles save RAM
+            tile_pad=5,
             pre_pad=0,
-            half=torch.cuda.is_available(),
+            half=False,            # 🔥 Critical: set to False on CPU
             device=device
         )
 
         output_np, _ = upsampler.enhance(img_np, outscale=4)
-        output_img = Image.fromarray(output_np)
-        output_img.thumbnail((1024, 1024))
-        output_img.save(output_path, format="WEBP", optimize=True, quality=85)
 
-        # Update task status
+        # Save enhanced image as compressed WebP
+        output_img = Image.fromarray(output_np)
+        output_img.thumbnail((768, 768))  # Cap output size
+        output_img.save(output_path, format="WEBP", optimize=True, quality=80)
+
+        # ✅ Update task status
         task_status[task_id] = {
             "status": "done",
             "input_url": f"/{preview_input_path}",
             "output_url": f"/{output_path}"
         }
 
-        # 🧹 Schedule auto-deletion
-        delete_file_later(preview_input_path, delay_seconds=600)
-        delete_file_later(output_path, delay_seconds=600)
-        delete_task_status_later(task_id, delay_seconds=600)
+        # 🔁 Schedule cleanup
+        delete_file_later(preview_input_path)
+        delete_file_later(output_path)
+        delete_task_status_later(task_id)
 
     except Exception as e:
         task_status[task_id] = {"status": "error", "error": str(e)}
     finally:
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         try:
             os.remove(input_path)
         except:
             pass
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 # === ROUTES ===
 
@@ -150,7 +157,7 @@ def enhance():
 @app.route('/status/<task_id>', methods=['GET'])
 def check_status(task_id):
     return jsonify(task_status.get(task_id, {"status": "unknown"}))
-
+ 
 @app.route('/result/<task_id>', methods=['GET'])
 def result(task_id):
     task = task_status.get(task_id)
