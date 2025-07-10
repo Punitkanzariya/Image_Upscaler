@@ -1,6 +1,7 @@
 import os
 import gc
 import uuid
+import time
 import threading
 from flask import Flask, render_template, request, jsonify
 from PIL import Image
@@ -19,10 +20,10 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 RESULT_FOLDER = 'static/results'
 WEIGHTS_FOLDER = 'weights'
-MAX_IMAGE_SIZE = 2 * 1024 * 1024  # 2 MB max upload
+MAX_IMAGE_SIZE = 2 * 1024 * 1024  # 2 MB upload limit
 app.config['MAX_CONTENT_LENGTH'] = MAX_IMAGE_SIZE
 
-# Folder creation
+# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
@@ -32,6 +33,28 @@ if not torch.cuda.is_available():
 
 task_status = {}
 
+# === AUTO CLEANUP FUNCTIONS ===
+
+def delete_file_later(path, delay_seconds=600):
+    """Delete a file after a delay (default: 10 min)."""
+    def delete():
+        time.sleep(delay_seconds)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except:
+            pass
+    threading.Thread(target=delete).start()
+
+def delete_task_status_later(task_id, delay_seconds=600):
+    """Remove task status from memory."""
+    def delete():
+        time.sleep(delay_seconds)
+        task_status.pop(task_id, None)
+    threading.Thread(target=delete).start()
+
+# === MODEL LOADING ===
+
 def get_model_architecture(model_name, scale):
     if model_name == 'RealESRGAN_x4plus':
         return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
@@ -40,11 +63,16 @@ def get_model_architecture(model_name, scale):
     else:
         return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
 
-def enhance_image(task_id, input_path, output_path, model_name):
+# === ENHANCEMENT FUNCTION ===
+
+def enhance_image(task_id, input_path, output_path, preview_input_path, model_name):
     try:
         img = Image.open(input_path).convert('RGB')
-        img.thumbnail((512, 512))  # Downscale to save memory
+        img.thumbnail((512, 512))  # Resize input to save memory
         img_np = np.array(img)
+
+        # Save preview of original image
+        img.save(preview_input_path, format="WEBP", optimize=True, quality=80)
 
         model = get_model_architecture(model_name, scale=4)
         model_path = os.path.join(WEIGHTS_FOLDER, f"{model_name}.pth")
@@ -53,7 +81,7 @@ def enhance_image(task_id, input_path, output_path, model_name):
             scale=4,
             model_path=model_path,
             model=model,
-            tile=128,            # Smaller tile size = less memory
+            tile=128,
             tile_pad=10,
             pre_pad=0,
             half=torch.cuda.is_available(),
@@ -62,14 +90,20 @@ def enhance_image(task_id, input_path, output_path, model_name):
 
         output_np, _ = upsampler.enhance(img_np, outscale=4)
         output_img = Image.fromarray(output_np)
-        output_img.thumbnail((1024, 1024))  # Prevent massive result size
+        output_img.thumbnail((1024, 1024))
         output_img.save(output_path, format="WEBP", optimize=True, quality=85)
 
+        # Update task status
         task_status[task_id] = {
             "status": "done",
-            "input_url": f"/{input_path}",
+            "input_url": f"/{preview_input_path}",
             "output_url": f"/{output_path}"
         }
+
+        # 🧹 Schedule auto-deletion
+        delete_file_later(preview_input_path, delay_seconds=600)
+        delete_file_later(output_path, delay_seconds=600)
+        delete_task_status_later(task_id, delay_seconds=600)
 
     except Exception as e:
         task_status[task_id] = {"status": "error", "error": str(e)}
@@ -78,9 +112,11 @@ def enhance_image(task_id, input_path, output_path, model_name):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         try:
-            os.remove(input_path)  # Clean up input file
+            os.remove(input_path)
         except:
             pass
+
+# === ROUTES ===
 
 @app.route('/', methods=['GET'])
 def index():
@@ -96,7 +132,8 @@ def enhance():
 
     task_id = uuid.uuid4().hex
     input_path = os.path.join(UPLOAD_FOLDER, f"{task_id}.jpg")
-    output_path = os.path.join(RESULT_FOLDER, f"{task_id}.webp")  # Use webp format
+    output_path = os.path.join(RESULT_FOLDER, f"{task_id}_output.webp")
+    preview_input_path = os.path.join(RESULT_FOLDER, f"{task_id}_input.webp")
 
     try:
         image_file.save(input_path)
@@ -104,7 +141,9 @@ def enhance():
         return jsonify({"status": "error", "error": f"Upload failed: {str(e)}"}), 400
 
     task_status[task_id] = {"status": "processing"}
-    threading.Thread(target=enhance_image, args=(task_id, input_path, output_path, model_name)).start()
+
+    # Start enhancement in a background thread
+    threading.Thread(target=enhance_image, args=(task_id, input_path, output_path, preview_input_path, model_name)).start()
 
     return jsonify({"task_id": task_id}), 202
 
@@ -119,6 +158,9 @@ def result(task_id):
         return "Result not available or still processing", 404
     return render_template("result.html", input_url=task["input_url"], output_url=task["output_url"])
 
+# === RUN APP ===
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+    
