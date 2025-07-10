@@ -5,7 +5,7 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile
     autoDeploy: true
-    healthCheckPath: /health  
+    healthCheckPath: /health
     envVars:
       - key: PORT
         value: 10000
