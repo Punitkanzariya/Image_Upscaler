@@ -2,9 +2,9 @@
 Flask==3.1.1
 gunicorn==21.2.0
 
-# Real-ESRGAN Stack
-torch==2.0.1+cpu
-torchvision==0.15.2+cpu
+# Real-ESRGAN Stack (CPU-compatible)
+torch==1.12.1
+torchvision==0.13.1
 basicsr==1.4.2
 realesrgan==0.3.0
 facexlib==0.3.0
