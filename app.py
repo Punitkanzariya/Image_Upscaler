@@ -16,56 +16,67 @@ except ImportError:
 
 app = Flask(__name__)
 
-# Folders
+# Config
 UPLOAD_FOLDER = 'static/uploads'
 RESULT_FOLDER = 'static/results'
 WEIGHTS_FOLDER = 'weights'
+MAX_IMAGE_SIZE = 2 * 1024 * 1024  # 2 MB upload limit
+app.config['MAX_CONTENT_LENGTH'] = MAX_IMAGE_SIZE
+
+# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
-# Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if not torch.cuda.is_available():
     torch.set_num_threads(1)
 
-# Task tracking
 task_status = {}
 
-# ============ Helpers ============
+# === AUTO CLEANUP FUNCTIONS ===
 
-def delete_file_later(path, delay=600):
-    def _delete():
-        time.sleep(delay)
+def delete_file_later(path, delay_seconds=600):
+    """Delete a file after a delay (default: 10 min)."""
+    def delete():
+        time.sleep(delay_seconds)
         try:
-            os.remove(path)
+            if os.path.exists(path):
+                os.remove(path)
         except:
             pass
-    threading.Thread(target=_delete).start()
+    threading.Thread(target=delete).start()
 
-def delete_task_status_later(task_id, delay=600):
-    def _delete():
-        time.sleep(delay)
+def delete_task_status_later(task_id, delay_seconds=600):
+    """Remove task status from memory."""
+    def delete():
+        time.sleep(delay_seconds)
         task_status.pop(task_id, None)
-    threading.Thread(target=_delete).start()
+    threading.Thread(target=delete).start()
 
-def get_model_architecture(name, scale):
-    if name == 'RealESRGAN_x4plus_anime_6B':
-        return RRDBNet(3, 3, 64, 6, 32, scale)
-    return RRDBNet(3, 3, 64, 23, 32, scale)
+# === MODEL LOADING ===
+
+def get_model_architecture(model_name, scale):
+    if model_name == 'RealESRGAN_x4plus':
+        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+    elif model_name == 'RealESRGAN_x4plus_anime_6B':
+        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=scale)
+    else:
+        return RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+
+# === ENHANCEMENT FUNCTION ===
 
 def enhance_image(task_id, input_path, output_path, preview_input_path, model_name):
     try:
-        # Load and shrink image
         img = Image.open(input_path).convert('RGB')
-        img.thumbnail((512, 512))
+        img.thumbnail((512, 512))  # Resize input to save memory
         img_np = np.array(img)
 
-        # Save input preview
-        img.save(preview_input_path, format="WEBP", quality=80)
+        # Save preview of original image
+        img.save(preview_input_path, format="WEBP", optimize=True, quality=80)
 
-        # Load model
         model = get_model_architecture(model_name, scale=4)
         model_path = os.path.join(WEIGHTS_FOLDER, f"{model_name}.pth")
+
         upsampler = RealESRGANer(
             scale=4,
             model_path=model_path,
@@ -77,37 +88,37 @@ def enhance_image(task_id, input_path, output_path, preview_input_path, model_na
             device=device
         )
 
-        # Enhance
         output_np, _ = upsampler.enhance(img_np, outscale=4)
         output_img = Image.fromarray(output_np)
         output_img.thumbnail((1024, 1024))
-        output_img.save(output_path, format="WEBP", quality=85)
+        output_img.save(output_path, format="WEBP", optimize=True, quality=85)
 
+        # Update task status
         task_status[task_id] = {
             "status": "done",
             "input_url": f"/{preview_input_path}",
             "output_url": f"/{output_path}"
         }
 
-        # Schedule cleanup
-        delete_file_later(preview_input_path)
-        delete_file_later(output_path)
-        delete_task_status_later(task_id)
+        # 🧹 Schedule auto-deletion
+        delete_file_later(preview_input_path, delay_seconds=600)
+        delete_file_later(output_path, delay_seconds=600)
+        delete_task_status_later(task_id, delay_seconds=600)
 
     except Exception as e:
         task_status[task_id] = {"status": "error", "error": str(e)}
     finally:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         try:
             os.remove(input_path)
         except:
             pass
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
-# ============ Routes ============
+# === ROUTES ===
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     return render_template('index.html')
 
@@ -121,34 +132,35 @@ def enhance():
 
     task_id = uuid.uuid4().hex
     input_path = os.path.join(UPLOAD_FOLDER, f"{task_id}.jpg")
-    preview_input_path = os.path.join(RESULT_FOLDER, f"{task_id}_input.webp")
     output_path = os.path.join(RESULT_FOLDER, f"{task_id}_output.webp")
-    image_file.save(input_path)
+    preview_input_path = os.path.join(RESULT_FOLDER, f"{task_id}_input.webp")
+
+    try:
+        image_file.save(input_path)
+    except Exception as e:
+        return jsonify({"status": "error", "error": f"Upload failed: {str(e)}"}), 400
 
     task_status[task_id] = {"status": "processing"}
-    threading.Thread(
-        target=enhance_image,
-        args=(task_id, input_path, output_path, preview_input_path, model_name)
-    ).start()
+
+    # Start enhancement in a background thread
+    threading.Thread(target=enhance_image, args=(task_id, input_path, output_path, preview_input_path, model_name)).start()
 
     return jsonify({"task_id": task_id}), 202
 
-@app.route('/status/<task_id>')
+@app.route('/status/<task_id>', methods=['GET'])
 def check_status(task_id):
     return jsonify(task_status.get(task_id, {"status": "unknown"}))
 
-@app.route('/result/<task_id>')
+@app.route('/result/<task_id>', methods=['GET'])
 def result(task_id):
     task = task_status.get(task_id)
     if not task or task.get("status") != "done":
-        return "Processing or result not found.", 404
+        return "Result not available or still processing", 404
     return render_template("result.html", input_url=task["input_url"], output_url=task["output_url"])
 
-# ============ Entry Point ============
-@app.route('/health')
-def health():
-    return "OK", 200
+# === RUN APP ===
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+    
